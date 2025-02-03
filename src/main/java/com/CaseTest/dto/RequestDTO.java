@@ -35,5 +35,14 @@ public class RequestDTO {
     public void setMyvariable2(String myvariable2) {
         this.myvariable2 = myvariable2;
     }
+
+    @Override
+    public String toString() {
+        return "RequestDTO{" +
+                "processkey='" + processkey + '\'' +
+                ", myvariable1='" + myvariable1 + '\'' +
+                ", myvariable2='" + myvariable2 + '\'' +
+                '}';
+    }
 }
 

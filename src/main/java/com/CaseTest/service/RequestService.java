@@ -37,6 +37,7 @@ public class RequestService {
     @Autowired
     private BPMClientService bpmClientService;
 
+    private static final int MAX_RETRY_ATTEMPTS = 3;
 
 
     @Autowired
@@ -151,65 +152,167 @@ public class RequestService {
 
     // Retry failed requests
 
-    public ResponseDTO retryRequests(List<UUID> requestIds) {
-        try {
-            // Fetch all requests by their IDs
+//    public ResponseDTO retryRequests(List<UUID> requestIds) {
+//        try {
+//            // Fetch all requests by their IDs
+//            List<Request> requests = requestRepository.findAllById(requestIds);
+//
+//            if (requests.isEmpty()) {
+//                return new ResponseDTO("0001", "No requests found for retry", null);
+//            }
+//
+//            for (Request request : requests) {
+//                // Retry only FAILED requests
+//                if (!"SUCCESS".equals(request.getStatus())) {
+//
+//
+//                    RequestDTO requestDTO = new RequestDTO();
+//                    requestDTO.setProcesskey("CaseInitiator"); // Assuming the process key remains constant
+//                    requestDTO.setMyvariable1(request.getMyvariable1());
+//                    requestDTO.setMyvariable2(request.getMyvariable2());
+//
+//
+//
+//
+//                    try {
+//                        // Retry the process by using the original request ID
+//                        ResponseDTO response = bpmClientService.invokeBPM(requestDTO);
+//
+//                        if ("0000".equals(response.getWsstatuscode())) {
+//                            // Update the request status to SUCCESS in DB
+//                            request.setStatus("SUCCESS");
+//                        } else {
+//                            // Handle retry failure from BPM response
+//                            request.setStatus("FAILED");
+//                        }
+//                        requestRepository.save(request);
+//
+//                        // Log success in the audit log
+//                        AuditLog log = new AuditLog();
+//                        log.setRequestId(request.getId());
+//                        log.setStatusCode(response.getWsstatuscode());
+//                        log.setStatusMessage(response.getWsmessage());
+//                        auditRepository.save(log);
+//
+//                    } catch (Exception ex) {
+//                        // Log failure in the audit log
+//                        AuditLog log = new AuditLog();
+//                        log.setRequestId(request.getId());
+//                        log.setStatusCode("0001");
+//                        log.setStatusMessage("Retry failed for requestId: " + request.getId() + ". Error: " + ex.getMessage());
+//                        auditRepository.save(log);
+//                    }
+//                }
+//            }
+//
+//            return new ResponseDTO("0000", "Retry completed. Check audit logs for details.", null);
+//        } catch (Exception e) {
+//            e.printStackTrace();
+//            return new ResponseDTO("0001", "Error during retry", e.getMessage());
+//        }
+//    }
+
+        /**
+         * Automatic retry for FAILED requests (up to 3 attempts).
+         * Runs every 5 minutes as a scheduled task.
+         */
+        @Scheduled(cron = "0 */5 * * * *") // Runs every 5 minutes
+        public void retryFailedRequests() {
+            List<Request> failedRequests = requestRepository.findAll()
+                    .stream()
+                    .filter(request -> "FAILED".equals(request.getStatus()) && request.getRetryAttempts() < MAX_RETRY_ATTEMPTS)
+                    .collect(Collectors.toList());
+
+            for (Request request : failedRequests) {
+                retrySingleRequest(request);
+            }
+        }
+
+        /**
+         * Retry a single failed request.
+         */
+        private void retrySingleRequest(Request request) {
+            try {
+                RequestDTO requestDTO = new RequestDTO();
+                requestDTO.setProcesskey("CaseInitiator");
+                requestDTO.setMyvariable1(request.getMyvariable1());
+                requestDTO.setMyvariable2(request.getMyvariable2());
+
+                ResponseDTO response = bpmClientService.invokeBPM(requestDTO);
+
+                if ("0000".equals(response.getWsstatuscode())) {
+                    request.setStatus("SUCCESS"); // Mark as successful
+                } else {
+                    request.setStatus("FAILED"); // Keep as failed
+                }
+
+                // Increment retry attempt count
+                request.setRetryAttempts(request.getRetryAttempts() + 1);
+                requestRepository.save(request);
+
+                // Log success/failure
+                AuditLog log = new AuditLog();
+                log.setRequestId(request.getId());
+                log.setRequestData(requestDTO.toString());
+                log.setStatusCode(response.getWsstatuscode());
+                log.setStatusMessage(response.getWsmessage());
+                auditRepository.save(log);
+
+            } catch (Exception ex) {
+                // Log failure attempt
+                AuditLog log = new AuditLog();
+                log.setRequestId(request.getId());
+                log.setStatusCode("0001");
+                log.setStatusMessage("Retry failed for requestId: " + request.getId() + ". Error: " + ex.getMessage());
+                auditRepository.save(log);
+
+                // Increment retry attempt count
+                request.setRetryAttempts(request.getRetryAttempts() + 1);
+                requestRepository.save(request);
+            }
+        }
+
+        /**
+         * Manual retry for failed requests (up to 5 at a time).
+         */
+        public ResponseDTO retryRequests(List<UUID> requestIds) {
+            if (requestIds.size() > 5) {
+                return new ResponseDTO("0001", "Maximum retry limit exceeded (Max: 5)", null);
+            }
+
             List<Request> requests = requestRepository.findAllById(requestIds);
 
             if (requests.isEmpty()) {
-                return new ResponseDTO("0001", "No requests found for retry", null);
+                return new ResponseDTO("0001", "No failed requests found for retry", null);
             }
 
             for (Request request : requests) {
                 // Retry only FAILED requests
                 if (!"SUCCESS".equals(request.getStatus())) {
-
-
-                    RequestDTO requestDTO = new RequestDTO();
-                    requestDTO.setProcesskey("CaseInitiator"); // Assuming the process key remains constant
-                    requestDTO.setMyvariable1(request.getMyvariable1());
-                    requestDTO.setMyvariable2(request.getMyvariable2());
-
-
-
-
-                    try {
-                        // Retry the process by using the original request ID
-                        ResponseDTO response = bpmClientService.invokeBPM(requestDTO);
-
-                        if ("0000".equals(response.getWsstatuscode())) {
-                            // Update the request status to SUCCESS in DB
-                            request.setStatus("SUCCESS");
-                        } else {
-                            // Handle retry failure from BPM response
-                            request.setStatus("FAILED");
-                        }
-                        requestRepository.save(request);
-
-                        // Log success in the audit log
-                        AuditLog log = new AuditLog();
-                        log.setRequestId(request.getId());
-                        log.setStatusCode(response.getWsstatuscode());
-                        log.setStatusMessage(response.getWsmessage());
-                        auditRepository.save(log);
-
-                    } catch (Exception ex) {
-                        // Log failure in the audit log
-                        AuditLog log = new AuditLog();
-                        log.setRequestId(request.getId());
-                        log.setStatusCode("0001");
-                        log.setStatusMessage("Retry failed for requestId: " + request.getId() + ". Error: " + ex.getMessage());
-                        auditRepository.save(log);
-                    }
+                    retrySingleRequest(request);
                 }
             }
 
-            return new ResponseDTO("0000", "Retry completed. Check audit logs for details.", null);
-        } catch (Exception e) {
-            e.printStackTrace();
-            return new ResponseDTO("0001", "Error during retry", e.getMessage());
+            return new ResponseDTO("0000", "Manual retry completed. Check audit logs for details.", null);
         }
-    }
+
+        /**
+         * Fetch all requests.
+         */
+        public List<Request> getAllRequests() {
+            return requestRepository.findAll();
+        }
+
+        /**
+         * Fetch FAILED requests that are still eligible for retry.
+         */
+        public List<Request> getFailedRequests() {
+            return requestRepository.findAll()
+                    .stream()
+                    .filter(request -> "FAILED".equals(request.getStatus()) && request.getRetryAttempts() < MAX_RETRY_ATTEMPTS)
+                    .collect(Collectors.toList());
+        }
+
 
 
     @Scheduled(cron = "0 */5 * * * *") // Every 5 minutes

@@ -45,12 +45,12 @@ public class RequestController {
                     .body(new ResponseDTO("0001", "An unexpected error occurred.", requestDTO));
         }
     }
-
-    // Retry requests
-    @PostMapping("/retry")
-    public ResponseDTO retryRequests(@RequestBody List<UUID> requestIds) {
-        return requestService.retryRequests(requestIds);
-    }
+//
+//    // Retry requests
+//    @PostMapping("/retry")
+//    public ResponseDTO retryRequests(@RequestBody List<UUID> requestIds) {
+//        return requestService.retryRequests(requestIds);
+//    }
 
 
     @GetMapping("/fetchByDate")
@@ -64,6 +64,44 @@ public class RequestController {
     public List<AuditLog> getAuditLogs(@RequestParam("requestId") UUID requestId) {
         System.out.println("Fetching data for Request ID: " + requestId);
         return requestService.getAuditLogsByRequestId(requestId);
+    }
+
+
+    /**
+     * Fetch all requests (including status and retry attempts).
+     */
+    @GetMapping("/all")
+    public ResponseEntity<List<Request>> getAllRequests() {
+        return ResponseEntity.ok(requestService.getAllRequests());
+    }
+
+    /**
+     * Fetch all FAILED requests that are eligible for retry (less than 3 attempts).
+     */
+    @GetMapping("/failed")
+    public ResponseEntity<List<Request>> getFailedRequests() {
+        return ResponseEntity.ok(requestService.getFailedRequests());
+    }
+
+    /**
+     * Manual bulk retry for FAILED requests (max 5 at a time).
+     */
+    @PostMapping("/retry")
+    public ResponseEntity<ResponseDTO> retryRequests(@RequestBody List<UUID> requestIds) {
+        if (requestIds.size() > 5) {
+            return ResponseEntity.badRequest()
+                    .body(new ResponseDTO("0001", "Maximum retry limit exceeded (Max: 5)", null));
+        }
+        return ResponseEntity.ok(requestService.retryRequests(requestIds));
+    }
+
+    /**
+     * Trigger automatic retry for FAILED requests (up to 3 attempts).
+     */
+    @PostMapping("/retry-auto")
+    public ResponseEntity<ResponseDTO> triggerAutoRetry() {
+        requestService.retryFailedRequests();
+        return ResponseEntity.ok(new ResponseDTO("0000", "Automatic retry process triggered", null));
     }
 
 

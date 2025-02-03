@@ -11,6 +11,10 @@ public class Request {
     @Id
     @GeneratedValue
     private UUID id;
+    
+    
+    
+    
 
     @Column
     private String processkey;
@@ -24,6 +28,8 @@ public class Request {
 
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
+
+    private int retryAttempts = 0;
 
     @PrePersist
     protected void onCreate() {
@@ -76,6 +82,14 @@ public class Request {
 
     public void setMyvariable2(String myvariable2) {
         this.myvariable2 = myvariable2;
+    }
+
+    public int getRetryAttempts() {
+        return retryAttempts;
+    }
+
+    public void setRetryAttempts(int retryAttempts) {
+        this.retryAttempts = retryAttempts;
     }
 }
 
